@@ -12,7 +12,10 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.Binder;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.telephony.CellIdentityLte;
 import android.telephony.CellInfo;
 import android.telephony.CellInfoGsm;
@@ -20,22 +23,44 @@ import android.telephony.CellInfoLte;
 import android.telephony.CellInfoNr;
 import android.telephony.CellInfoWcdma;
 import android.telephony.PhoneStateListener;
+import android.telephony.TelephonyCallback;
 import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
+import androidx.room.Room;
+import com.example.mygsm.database.AppDatabase;
+import com.example.mygsm.database.Data;
 
+import java.lang.reflect.Array;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+
+import android.os.PowerManager;
+import android.os.PowerManager.WakeLock;
+
+
 
 public class GSMService extends Service {
     private static final String CHANNEL_ID = "gsm_channel_id";
 
     TelephonyManager tm;
-    PhoneStateListener listener;
-    List<CellInfo> cellInfos;
 
+    PhoneStateListener phoneStateListener;
+
+    long lastCallBack = 0;
+    TelephonyCallback telephonyCallback;
+    private WakeLock wakeLock;
+
+    List<Integer> lastData = new ArrayList<>();
+
+    private AppDatabase db;
+
+    List<Data> dataAlert;
     int count = 0;
 
     // Callback Service → MainActivity
@@ -55,13 +80,40 @@ public class GSMService extends Service {
             return GSMService.this;
         }
     }
+    private boolean isRunning = false;
+    private boolean isRunningHard = false;
+    private final Handler handler = new Handler();
+    private final Runnable autoRefreshTask = new Runnable() {
+        @Override
+        public void run() {
+
+            if( (System.currentTimeMillis() - lastCallBack) > 30000){
+                // si > 30s sans refresh du callback alors refresh tout les 6s
+                refresh();
+                if (!isRunningHard){
+                    showNotification("refresh hard");
+                    isRunningHard = true;
+                }
+                handler.postDelayed(this, 6000);
+            }else{
+                if (isRunningHard){
+                    showNotification("refresh CallBack");
+                    isRunningHard = false;
+                }
+                // verifier tout les 10s
+                handler.postDelayed(this, 10000);
+            }
+        }
+    };
+
     // Service → MainActivity
     // voir pour changer les types en fonction de l'usage.
     private void sendUpdate(String type, String value) {
         if (callback != null) {
             callback.onUpdate(type, value);
         } else {
-            updateNotification(value);
+            updateNotification("count=" + count + "\n" + type + ":" + value);
+            count ++;
         }
     }
 
@@ -83,6 +135,7 @@ public class GSMService extends Service {
             case "test":
                 updateNotification("test:" + count);
                 sendUpdate("test","test" + count);
+                showNotification("test" + count);
                 count ++;
                 Log.d("SERVICE", " test:" + count);
                 break;
@@ -97,6 +150,10 @@ public class GSMService extends Service {
 
             case "stop_refresh":
                 stop_refresh();
+                break;
+
+            case "alert_refresh":
+                loadDataInBackground();
                 break;
 
             default:
@@ -114,46 +171,92 @@ public class GSMService extends Service {
         if (cellInfos_tempo != null) {
             StringBuilder liste_return = new StringBuilder();
             Log.d("SERVICE", "size=" + cellInfos_tempo.size());
-            if (cellInfos_tempo.isEmpty()) sendUpdate("refresh", "Empty");
+            if (cellInfos_tempo.isEmpty()) {
+                sendUpdate("refresh", "Empty");
+                return;
+            }
+            List<Integer> last_tempo = new ArrayList<>();
+            boolean alert_existe = false;
             for (CellInfo info : cellInfos_tempo) {
-                    if (info instanceof CellInfoLte) {
+                int cellId = 0;  // ID
+                int tac = 0;
+                int rssi = 0;
+                String type = "";
+                if (info instanceof CellInfoLte) {
+
                         CellInfoLte cell = (CellInfoLte) info;
-                        int cellId = cell.getCellIdentity().getCi(); // ID
-                        int tac = cell.getCellIdentity().getTac(); // Zone
-                        int rssi = cell.getCellSignalStrength().getDbm(); // Puissance du signal en dBm
+                        cellId = cell.getCellIdentity().getCi(); // ID
+                        tac = cell.getCellIdentity().getTac(); // Zone
+                        rssi = cell.getCellSignalStrength().getDbm(); // Puissance du signal en dBm
 
                         Log.d("SERVICE", "CellInfoLte");
-                        liste_return.append("-CellInfoLte: CI=").append(cellId).append(" TAC=").append(tac).append(" RSSI=").append(rssi).append("\n");
-
-                    }
-                    if (info instanceof CellInfoGsm) {
+                        type = "CellInfoLte";
+                    } else if (info instanceof CellInfoGsm) {
                         CellInfoGsm cell = (CellInfoGsm) info;
-                        int cellId = cell.getCellIdentity().getCid(); // ID
-                        int tac = cell.getCellIdentity().getLac(); // Zone
-                        int rssi = cell.getCellSignalStrength().getDbm();
-                        liste_return.append("-CellInfoGsm: CI=").append(cellId).append(" TAC=").append(tac).append(" RSSI=").append(rssi).append("\n");
+                        cellId = cell.getCellIdentity().getCid(); // ID
+                        tac = cell.getCellIdentity().getLac(); // Zone
+                        rssi = cell.getCellSignalStrength().getDbm();
+                        type = "CellInfoGsm";
                         Log.d("SERVICE", "CellInfoGsm");
-                    }
-
-                    if (info instanceof CellInfoWcdma) {
+                    } else if (info instanceof CellInfoWcdma) {
                         CellInfoWcdma cell = (CellInfoWcdma) info;
-                        int cellId = cell.getCellIdentity().getCid(); // ID
-                        int tac = cell.getCellIdentity().getLac(); // Zone
-                        int rssi = cell.getCellSignalStrength().getDbm();
-                        liste_return.append("-CellInfoWcdma: CI=").append(cellId).append(" TAC=").append(tac).append(" RSSI=").append(rssi).append("\n");
+                        cellId = cell.getCellIdentity().getCid(); // ID
+                        tac = cell.getCellIdentity().getLac(); // Zone
+                        rssi = cell.getCellSignalStrength().getDbm();
                         Log.d("SERVICE", "CellInfoWcdma");
-                    }
-                    /*
-                    if (info instanceof CellInfoNr) { // 5G
-                        CellInfoNr cell = (CellInfoNr) info;
-                        int cellId = cell.getCellIdentity().getCid(); // ID
-                        int tac = cell.getCellIdentity().getLac(); // Zone
-                        int rssi = cell.getCellSignalStrength().getDbm();
-                        Log.d("SERVICE", "CellInfoNr");
-                    }
-                    */
+                        type = "CellInfoWcdma";
+                    } else if (info instanceof CellInfoNr) { // 5G
+                    CellInfoNr cell = (CellInfoNr) info;
 
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try {
+                            // Récupération dynamique (réflexion)
+                            Method mNci = cell.getCellIdentity().getClass().getMethod("getNci");
+                            Method mTac = cell.getCellIdentity().getClass().getMethod("getTac");
+
+                            cellId = (int) mNci.invoke(cell.getCellIdentity());
+                            tac = (int) mTac.invoke(cell.getCellIdentity());
+
+                        } catch (Exception e) {
+                            Log.w("NR", "Méthodes NR non disponibles");
+                        }
+                    }
+                    rssi = cell.getCellSignalStrength().getDbm();
+                    Log.d("SERVICE", "CellInfoNr");
+                    type = "CellInfoNr";
+                }
+                liste_return.append(type).append(": CI=").append(cellId).append(" TAC=").append(tac).append(" RSSI=").append(rssi);
+                if (info.isRegistered()) liste_return.append("SERVING");
+
+                // Only if cellId existe
+                if ( cellId > 1000 && cellId != 65535 /*&& tac > 100 && tac != 65535*/) {
+                    // lastData vs cellId // si n'est pas déjà passé
+                    if (!lastData.contains(cellId)) {
+                        if (dataAlert != null){
+                            // verify if alert dataAlert
+                            for (Data d : dataAlert) {
+                                if (d.Ci == cellId) {
+                                    alert_existe = true;
+                                    showNotification("Alert: " + cellId + " "+ d.name);
+                                    //break;
+                                }
+                            }
+                        }
+                        insertDataInBackground(cellId);
+                    }
+                    last_tempo.add(cellId);
+                }
+                liste_return.append("\n");
             }
+            if (alert_existe){
+                // fair un buzz
+                vibrateOnce();
+            }
+
+            // recupere les cellId (last_tempo) et les ajouter dans lastData
+            lastData.clear();
+            lastData.addAll(last_tempo);
+
             sendUpdate("refresh", liste_return.toString());
         }else{
             sendUpdate("refresh", "null");
@@ -166,22 +269,51 @@ public class GSMService extends Service {
         }else {
             List<CellInfo> cellInfos_tempo = tm.getAllCellInfo();
             UpdateCellID(cellInfos_tempo);
-
-
-            // si nouveau
-            cellInfos = cellInfos_tempo;
         }
     }
 
-    private void auto_refresh(){
-        if (tm != null) {
-            tm.listen(listener, PhoneStateListener.LISTEN_CELL_INFO);
+    private void auto_refresh() {
+        if (!isRunning) {
+            lastCallBack = System.currentTimeMillis();
+            handler.post(autoRefreshTask);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                tm.registerTelephonyCallback(getMainExecutor(), telephonyCallback);
+            }else{
+                tm.listen(phoneStateListener, PhoneStateListener.LISTEN_CELL_INFO);
+            }
+
+            // Active le WakeLock
+            if (wakeLock != null && !wakeLock.isHeld()) {
+                wakeLock.acquire();
+                Log.d("SERVICE", "WakeLock ACQUIRED");
+            }
+
+            Log.d("SERVICE", "auto_refresh");
+            isRunning = true;
         }
     }
 
-    private void stop_refresh(){
-        if (tm != null) {
-            tm.listen(listener, PhoneStateListener.LISTEN_NONE);
+    private void stop_refresh() {
+        if (isRunning) {
+            handler.removeCallbacks(autoRefreshTask);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (telephonyCallback != null) {
+                    tm.unregisterTelephonyCallback(telephonyCallback);
+                }
+            }else{
+                if (phoneStateListener != null) {
+                    tm.listen(phoneStateListener, PhoneStateListener.LISTEN_NONE);
+                }
+            }
+
+            // Libère le WakeLock
+            if (wakeLock != null && wakeLock.isHeld()) {
+                wakeLock.release();
+                Log.d("SERVICE", "WakeLock RELEASED (stop_refresh)");
+            }
+
+            Log.d("SERVICE", "stop_refresh isRunning");
+            isRunning = false;
         }
     }
 
@@ -191,7 +323,7 @@ public class GSMService extends Service {
     private void updateNotification(String newText) {
         Log.d("SERVICE", "updateNotification : " + newText);
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("GSM update")
+                .setContentTitle("GSM lecture")
                 .setStyle(new NotificationCompat.BigTextStyle() .bigText(newText))
                 .setSmallIcon(android.R.drawable.ic_menu_compass)
                 .setOngoing(true)
@@ -199,6 +331,60 @@ public class GSMService extends Service {
 
         NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         manager.notify(1, notification); // même ID que startForeground
+    }
+    private void showNotification(String message) {
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_menu_compass)   // ton icône
+                .setContentTitle("MyGSM notif")
+                .setStyle(new NotificationCompat.BigTextStyle() .bigText(message))
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT);
+
+        NotificationManagerCompat manager = NotificationManagerCompat.from(this);
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        int uniqueId = (int) System.currentTimeMillis();
+        manager.notify(uniqueId, builder.build());
+    }
+
+    private void insertDataInBackground(int Ci) {
+        new Thread(() -> {
+            Data existing = db.dataDao().getByCi(Ci);
+            long now = System.currentTimeMillis();
+            if (existing != null) {
+                existing.count ++;
+                existing.date = now;
+                db.dataDao().update(existing);
+            } else {
+                db.dataDao().insert(new Data("New","" , Ci, false,1,now));
+            }
+        }).start();
+    }
+
+    private void loadDataInBackground() {
+        new Thread(() -> {
+            dataAlert = db.dataDao().getAlertData();
+            Log.d("SERVICE", "dataAlert: " + dataAlert.size());
+        }).start();
+    }
+
+    private void vibrateOnce() {
+        Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+
+        if (v != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                //v.vibrate(VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE));
+                long[] pattern = {0, 100, 50, 200};
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v.vibrate(VibrationEffect.createWaveform(pattern, -1));
+                } else {
+                    v.vibrate(pattern, -1);
+                }
+            } else {
+                v.vibrate(200);
+            }
+        }
     }
 
     @Override
@@ -233,29 +419,37 @@ public class GSMService extends Service {
         tm = (TelephonyManager) getSystemService(TELEPHONY_SERVICE);
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
                 ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED ||
-                ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED){
+                ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             updateNotification("Il manque une/des Permission(s).");
             return;
         }
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
-                ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
-            listener = new PhoneStateListener() {
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Android 12+
+            telephonyCallback = new TelephonyCallback() {
+                public void onCellInfoChanged(List<CellInfo> cellInfo) {
+                    UpdateCellID(cellInfo);
+                    lastCallBack = System.currentTimeMillis();
+                }
+            };
+
+        } else {
+            // Android 10–11
+            phoneStateListener = new PhoneStateListener() {
                 @Override
                 public void onCellInfoChanged(List<CellInfo> cellInfo) {
-
-                    if (ActivityCompat.checkSelfPermission(GSMService.this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED || ActivityCompat.checkSelfPermission(GSMService.this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-                        return;
-                    }
-                    super.onCellInfoChanged(cellInfo);
-                    if (cellInfo != null && !cellInfo.isEmpty()) {
-                        UpdateCellID(cellInfo);
-                    }
-
+                    UpdateCellID(cellInfo);
+                    lastCallBack = System.currentTimeMillis();
                 }
             };
 
         }
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MyGSM:WakeLock");
 
+        db = Room.databaseBuilder( getApplicationContext(), AppDatabase.class, "my_database" ).build(); // pas de allowMainThreadQueries()
+
+        loadDataInBackground();
     }
 
     @Override

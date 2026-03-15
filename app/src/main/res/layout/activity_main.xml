@@ -7,21 +7,11 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
-    <EditText
-        android:id="@+id/info"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:ems="10"
-        android:inputType="text"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@+id/actif"
-        app:layout_constraintTop_toTopOf="parent" />
-
     <Switch
         android:id="@+id/actif"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="24dp"
+        android:layout_marginStart="40dp"
         android:layout_marginTop="16dp"
         android:text="Actif/Inactif"
         app:layout_constraintStart_toStartOf="parent"
@@ -34,29 +24,145 @@
         android:text="Auto"
         app:layout_constraintBottom_toBottomOf="@+id/refresh"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@+id/refresh"
-        app:layout_constraintTop_toTopOf="@+id/refresh" />
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@+id/refresh"
+        app:layout_constraintVertical_bias="0.333" />
 
     <Button
         android:id="@+id/refresh"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="32dp"
         android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
         android:text="refresh"
-        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/actif2"
         app:layout_constraintTop_toBottomOf="@+id/actif" />
 
     <EditText
         android:id="@+id/data"
-        android:layout_width="347dp"
-        android:layout_height="610dp"
+        android:layout_width="340dp"
+        android:layout_height="187dp"
         android:ems="10"
         android:gravity="start|top"
         android:inputType="textMultiLine"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="@+id/liste"
+        app:layout_constraintStart_toStartOf="@+id/liste"
+        app:layout_constraintTop_toBottomOf="@+id/liste" />
+
+    <Button
+        android:id="@+id/reset"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="reset"
+        app:layout_constraintBottom_toBottomOf="@+id/refresh"
+        app:layout_constraintStart_toEndOf="@+id/actif2" />
+
+    <EditText
+        android:id="@+id/name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:ems="10"
+        android:inputType="text"
+        app:layout_constraintStart_toStartOf="@+id/refresh"
+        app:layout_constraintTop_toBottomOf="@+id/refresh" />
+
+    <EditText
+        android:id="@+id/infos"
+        android:layout_width="280dp"
+        android:layout_height="56dp"
+        android:layout_marginTop="20dp"
+        android:ems="10"
+        android:inputType="text"
+        app:layout_constraintStart_toStartOf="@+id/name"
+        app:layout_constraintTop_toBottomOf="@+id/name" />
+
+    <TextView
+        android:id="@+id/textView3"
+        android:layout_width="53dp"
+        android:layout_height="36dp"
+        android:text="Name:"
+        app:layout_constraintBottom_toBottomOf="@+id/name"
+        app:layout_constraintEnd_toStartOf="@+id/name" />
+
+    <TextView
+        android:id="@+id/textView4"
+        android:layout_width="51dp"
+        android:layout_height="30dp"
+        android:text="Infos:"
+        app:layout_constraintEnd_toStartOf="@+id/infos"
+        app:layout_constraintTop_toTopOf="@+id/infos" />
+
+    <TextView
+        android:id="@+id/date"
+        android:layout_width="281dp"
+        android:layout_height="41dp"
+        android:text="TextView"
+        android:textSize="20sp"
+        app:layout_constraintStart_toStartOf="@+id/infos"
+        app:layout_constraintTop_toBottomOf="@+id/infos" />
+
+    <TextView
+        android:id="@+id/count"
+        android:layout_width="65dp"
+        android:layout_height="25dp"
+        android:text="TextView"
+        app:layout_constraintBottom_toBottomOf="@+id/name"
+        app:layout_constraintEnd_toEndOf="@+id/infos"
+        app:layout_constraintHorizontal_bias="0.823"
+        app:layout_constraintStart_toEndOf="@+id/name" />
+
+    <TextView
+        android:id="@+id/count2"
+        android:layout_width="64dp"
+        android:layout_height="18dp"
+        android:text="count:"
+        app:layout_constraintEnd_toEndOf="@+id/count"
+        app:layout_constraintHorizontal_bias="1.0"
+        app:layout_constraintStart_toEndOf="@+id/name"
+        app:layout_constraintTop_toTopOf="@+id/name" />
+
+    <Switch
+        android:id="@+id/alerte"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Alerte"
+        app:layout_constraintStart_toStartOf="@+id/date"
+        app:layout_constraintTop_toBottomOf="@+id/date" />
+
+    <Button
+        android:id="@+id/update"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Update"
+        app:layout_constraintEnd_toEndOf="@+id/date"
+        app:layout_constraintTop_toBottomOf="@+id/date" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/liste"
+        android:layout_width="367dp"
+        android:layout_height="143dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/refresh" />
+        app:layout_constraintTop_toBottomOf="@+id/update" />
+
+    <EditText
+        android:id="@+id/Cellid"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:ems="10"
+        android:inputType="number"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@+id/actif"
+        tools:layout_editor_absoluteY="6dp" />
+
+    <Button
+        android:id="@+id/button"
+        android:layout_width="22dp"
+        android:layout_height="47dp"
+        android:text="Button"
+        app:layout_constraintBottom_toBottomOf="@+id/infos"
+        app:layout_constraintStart_toEndOf="@+id/infos" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

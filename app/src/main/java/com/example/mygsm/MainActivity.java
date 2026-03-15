@@ -12,6 +12,7 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.util.Log;
 import android.view.View;
+import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
@@ -21,7 +22,16 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.room.Room;
+import com.example.mygsm.database.AppDatabase;
+import com.example.mygsm.database.Data;
+
 import com.example.mygsm.databinding.ActivityMainBinding;
+
+import java.util.Date;
+import java.util.List;
 
 
 public class MainActivity extends AppCompatActivity  implements GSMService.Callback {
@@ -31,6 +41,11 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
     private boolean isBound = false;
     private GSMService myService = null;
 
+    private AppDatabase db;
+
+    // Liste des Data
+    List<Data> datalist;
+    DataAdapter adapter;
 
     // Service → MainActivity
     private final ServiceConnection connection = new ServiceConnection() {
@@ -54,16 +69,22 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
     public void onUpdate(String type, String value) {
         runOnUiThread(() -> {
             // Mise à jour UI
-            Log.d("APP", type + " = " + value);
+            Log.d("APP", "onUpdate:" + type + " = " + value);
 
             if (type == null) return;
             switch (type) {
                 case "test":
-                    binding.info.setText(type + " = " + value);
+                    binding.data.setText(type + " = " + value);
+                    Toast.makeText(MainActivity.this,
+                            "test: ",
+                            Toast.LENGTH_SHORT).show();
                     break;
 
                 case "refresh":
                     binding.data.setText(value);
+                    if ( !value.equals("Empty") && !value.isEmpty()) {
+                        loadDataInFront();
+                    }
                     break;
 
                 default:
@@ -83,6 +104,51 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
         sendBroadcast(intent);
     }
 
+    private void updateDataFront() {
+        new Thread(() -> {
+            if (!binding.Cellid.getText().toString().isEmpty()) {
+                Data existing = db.dataDao().getByCi(Integer.parseInt(binding.Cellid.getText().toString()));
+                if (existing != null) {
+                    existing.name = binding.name.getText().toString();
+                    existing.info = binding.infos.getText().toString();
+                    existing.alert = binding.alerte.isChecked();
+                    db.dataDao().update(existing);
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this, "UPDATE : " + binding.Cellid.getText().toString(), Toast.LENGTH_SHORT).show();
+                        loadDataInFront();
+                    });
+                    //alert_refresh (pour actualise la list des alert dans le service
+                    sendCommandToService("alert_refresh");
+                }else{
+                    Toast.makeText(MainActivity.this, "UPDATE? : " + Integer.parseInt(binding.Cellid.getText().toString()) + ";" + binding.Cellid.getText().toString(), Toast.LENGTH_SHORT).show();
+                }
+            }
+        }).start();
+    }
+    private void loadDataInFront() {
+        new Thread(() -> {
+            if (binding.alerte.isChecked()) {
+                datalist = db.dataDao().getAlertData();
+            }else{
+                datalist = db.dataDao().getNotAlertData();
+            }
+            Log.d("APP", "data: " + datalist.size());
+            if (datalist != null) {
+                if (!datalist.isEmpty()){
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this,
+                                "getAllData: " + datalist.size(),
+                                Toast.LENGTH_SHORT).show();
+                        adapter.updateData(datalist);
+                        adapter.notifyDataSetChanged();
+                        Toast.makeText(MainActivity.this,
+                                "getAllData: show " + datalist.size(),
+                                Toast.LENGTH_SHORT).show();
+                    });
+                }
+            }
+        }).start();
+    }
 
 
     @Override
@@ -112,14 +178,71 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
         binding.actif2.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                AutoRefreshMyService(binding.actif.isChecked());
+                AutoRefreshMyService(binding.actif2.isChecked());
             }
         });
 
-        binding.refresh.setOnClickListener(v ->
-                RefreshMyService()
-        );
+        binding.alerte.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                loadDataInFront();
+            }
+        });
 
+        binding.refresh.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                RefreshMyService();
+            }
+        });
+
+        binding.reset.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                binding.data.setText("");
+                binding.Cellid.setText("");
+                binding.infos.setText("");
+                binding.date.setText("");
+                binding.count.setText("");
+            }
+        });
+
+        binding.update.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                updateDataFront();
+            }
+        });
+
+        binding.button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                ActionMyService();
+            }
+        });
+
+
+        db = Room.databaseBuilder( getApplicationContext(), AppDatabase.class, "my_database" ).build(); // pas de allowMainThreadQueries()
+
+        RecyclerView recyclerView = findViewById(R.id.liste);
+        recyclerView.setLayoutManager(new LinearLayoutManager(this));
+
+        adapter = new DataAdapter(datalist, (item, position) -> {
+            // Quand on clique sur un item
+            //Toast.makeText(this, "Sélection : " + item.Ci, Toast.LENGTH_SHORT).show();
+            Data d = datalist.get(position);
+            binding.Cellid.setText(String.valueOf(d.Ci));
+            binding.name.setText(d.name);
+            binding.infos.setText(d.info);
+            binding.count.setText(String.valueOf(d.count));
+            binding.alerte.setChecked(d.alert);
+            binding.date.setText(new Date(d.date).toString());
+            Log.d("APP", "DataAdapter LISTE");
+        });
+
+        recyclerView.setAdapter(adapter);
+
+        loadDataInFront();
     }
 
     @Override
@@ -127,6 +250,7 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
         super.onResume();
         // ajouter les permissions
         demanderPermissions();
+
     }
 
     @Override
@@ -212,7 +336,7 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
     }
 
     private void AutoRefreshMyService(Boolean actif){
-        if (actif = true) {
+        if (actif == true) {
             sendCommandToService("auto_refresh");
         } else {
             sendCommandToService("stop_refresh");
@@ -233,5 +357,13 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
                     },
                     1000);
         }
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.VIBRATE) != PackageManager.PERMISSION_GRANTED ){
+            ActivityCompat.requestPermissions(this,
+                    new String[]{
+                            Manifest.permission.VIBRATE,
+                    },
+                    1001);
+        }
+
     }
 }
