@@ -1,6 +1,7 @@
 package com.example.mygsm;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -46,6 +47,9 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
     // Liste des Data
     List<Data> datalist;
     DataAdapter adapter;
+
+    SharedPreferences prefs;
+    SharedPreferences.Editor editor;
 
     // Service → MainActivity
     private final ServiceConnection connection = new ServiceConnection() {
@@ -107,7 +111,7 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
     private void updateDataFront() {
         new Thread(() -> {
             if (!binding.Cellid.getText().toString().isEmpty()) {
-                Data existing = db.dataDao().getByCi(Integer.parseInt(binding.Cellid.getText().toString()));
+                Data existing = db.dataDao().getByCi(binding.Cellid.getText().toString());
                 if (existing != null) {
                     existing.name = binding.name.getText().toString();
                     existing.info = binding.infos.getText().toString();
@@ -136,14 +140,14 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
             if (datalist != null) {
                 if (!datalist.isEmpty()){
                     runOnUiThread(() -> {
-                        Toast.makeText(MainActivity.this,
+                        /*Toast.makeText(MainActivity.this,
                                 "getAllData: " + datalist.size(),
-                                Toast.LENGTH_SHORT).show();
+                                Toast.LENGTH_SHORT).show();*/
                         adapter.updateData(datalist);
                         adapter.notifyDataSetChanged();
-                        Toast.makeText(MainActivity.this,
+                        /*Toast.makeText(MainActivity.this,
                                 "getAllData: show " + datalist.size(),
-                                Toast.LENGTH_SHORT).show();
+                                Toast.LENGTH_SHORT).show();*/
                     });
                 }
             }
@@ -158,29 +162,52 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
         setContentView(binding.getRoot());
 
         // Lire getSharedPreferences pour ajouter les paramètres précedent.
-        /*
-        SharedPreferences prefs = getSharedPreferences("my_prefs", MODE_PRIVATE);
-        String savedText = prefs.getString("saved_text", "");
-         */
-        binding.actif.setChecked(false);
+
+        prefs = getSharedPreferences("my_prefs", MODE_PRIVATE);
+        //String savedText = prefs.getString("saved_text", "");
+        editor = prefs.edit();
+
+        binding.actif.setChecked(prefs.getBoolean("actif",false));
         binding.actif.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 if (binding.actif.isChecked()) {
                     startMyService();
+
+                    if(binding.switchInfo.isChecked()){
+                        sendCommandToService("switchInfo:ON");
+                    }
+                    AutoRefreshMyService(binding.actif2.isChecked());
+
                 }else{
                     StopMyService();
-                    binding.actif2.setChecked(false);
+                    //binding.actif2.setChecked(false);
                 }
             }
         });
-        binding.actif2.setChecked(false);
+        binding.actif2.setChecked(prefs.getBoolean("actif2",false));
         binding.actif2.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                editor.putBoolean("actif2",binding.actif2.isChecked());
+                editor.apply();
                 AutoRefreshMyService(binding.actif2.isChecked());
             }
         });
+        binding.switchInfo.setChecked(prefs.getBoolean("switchInfo",false));
+        binding.switchInfo.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                editor.putBoolean("switchInfo",binding.switchInfo.isChecked());
+                editor.apply();
+                if(binding.switchInfo.isChecked()){
+                    sendCommandToService("switchInfo:ON");
+                }else{
+                    sendCommandToService("switchInfo:OFF");
+                }
+            }
+        });
+
 
         binding.alerte.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -231,7 +258,7 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
             // Quand on clique sur un item
             //Toast.makeText(this, "Sélection : " + item.Ci, Toast.LENGTH_SHORT).show();
             Data d = datalist.get(position);
-            binding.Cellid.setText(String.valueOf(d.Ci));
+            binding.Cellid.setText(d.key);
             binding.name.setText(d.name);
             binding.infos.setText(d.info);
             binding.count.setText(String.valueOf(d.count));
@@ -283,6 +310,7 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
             unbindService(connection);
             isBound = false;
         }
+
     }
 
     @Override
@@ -312,6 +340,8 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
         if (!isBound) {
             bindService(intent, connection, Context.BIND_AUTO_CREATE);
         }
+        editor.putBoolean("actif",true);
+        editor.apply();
     }
 
     private void StopMyService(){
@@ -325,6 +355,8 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
         Intent intent = new Intent(this, GSMService.class);
         stopService(intent);
         myService = null;
+        editor.putBoolean("actif",false);
+        editor.apply();
     }
 
     private void ActionMyService(){
@@ -357,6 +389,7 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
                     },
                     1000);
         }
+
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.VIBRATE) != PackageManager.PERMISSION_GRANTED ){
             ActivityCompat.requestPermissions(this,
                     new String[]{
@@ -364,6 +397,30 @@ public class MainActivity extends AppCompatActivity  implements GSMService.Callb
                     },
                     1001);
         }
+
+        // Android 10+ : localisation en arrière-plan
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                        != PackageManager.PERMISSION_GRANTED) {
+
+            // Afficher un dialogue explicatif avant la demande
+            new AlertDialog.Builder(this)
+                    .setTitle("Autorisation requise")
+                    .setMessage("Pour que l'application fonctionne correctement, elle doit accéder à votre position même lorsque l'application est fermée ou en arrière‑plan.")
+                    .setPositiveButton("Autoriser", (dialog, which) -> {
+                        ActivityCompat.requestPermissions(
+                                this,
+                                new String[]{ Manifest.permission.ACCESS_BACKGROUND_LOCATION },
+                                1004
+                        );
+                    })
+                    .setNegativeButton("Annuler", (dialog, which) -> {
+                        dialog.dismiss();
+                    })
+                    .setCancelable(false)
+                    .show();
+        }
+
 
     }
 }

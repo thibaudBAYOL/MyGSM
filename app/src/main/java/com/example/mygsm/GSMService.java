@@ -9,6 +9,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Binder;
 import android.os.Build;
@@ -17,6 +18,7 @@ import android.os.IBinder;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.telephony.CellIdentityLte;
+import android.telephony.CellIdentityNr;
 import android.telephony.CellInfo;
 import android.telephony.CellInfoGsm;
 import android.telephony.CellInfoLte;
@@ -56,11 +58,12 @@ public class GSMService extends Service {
     TelephonyCallback telephonyCallback;
     private WakeLock wakeLock;
 
-    List<Integer> lastData = new ArrayList<>();
+    List<String> lastData = new ArrayList<>();
 
     private AppDatabase db;
 
     List<Data> dataAlert;
+    Boolean switchInfo = false;
     int count = 0;
 
     // Callback Service → MainActivity
@@ -156,6 +159,12 @@ public class GSMService extends Service {
                 loadDataInBackground();
                 break;
 
+            case "switchInfo:ON":
+                switchInfo = true;
+                break;
+            case "switchInfo:OFF":
+                switchInfo = false;
+                break;
             default:
                 Log.w("SERVICE", "Commande inconnue : " + cmd);
                 break;
@@ -175,47 +184,56 @@ public class GSMService extends Service {
                 sendUpdate("refresh", "Empty");
                 return;
             }
-            List<Integer> last_tempo = new ArrayList<>();
+            List<String> last_tempo = new ArrayList<>();
             boolean alert_existe = false;
             for (CellInfo info : cellInfos_tempo) {
-                int cellId = 0;  // ID
+                long cellId = 0;  // ID
                 int tac = 0;
                 int rssi = 0;
+                String mcc = "";
+                String mnc = "";
                 String type = "";
-                if (info instanceof CellInfoLte) {
+                if (info instanceof CellInfoLte) { // LTE 4G
 
                         CellInfoLte cell = (CellInfoLte) info;
                         cellId = cell.getCellIdentity().getCi(); // ID
                         tac = cell.getCellIdentity().getTac(); // Zone
                         rssi = cell.getCellSignalStrength().getDbm(); // Puissance du signal en dBm
+                        mcc = cell.getCellIdentity().getMccString();
+                        mnc = cell.getCellIdentity().getMncString();
 
                         Log.d("SERVICE", "CellInfoLte");
-                        type = "CellInfoLte";
-                    } else if (info instanceof CellInfoGsm) {
+                        type = "4G";
+                    } else if (info instanceof CellInfoGsm) { // 2G
                         CellInfoGsm cell = (CellInfoGsm) info;
                         cellId = cell.getCellIdentity().getCid(); // ID
                         tac = cell.getCellIdentity().getLac(); // Zone
                         rssi = cell.getCellSignalStrength().getDbm();
-                        type = "CellInfoGsm";
+                        mcc = cell.getCellIdentity().getMccString();
+                        mnc = cell.getCellIdentity().getMncString();
+                        type = "2G";
                         Log.d("SERVICE", "CellInfoGsm");
-                    } else if (info instanceof CellInfoWcdma) {
+                    } else if (info instanceof CellInfoWcdma) { // 3G
                         CellInfoWcdma cell = (CellInfoWcdma) info;
                         cellId = cell.getCellIdentity().getCid(); // ID
                         tac = cell.getCellIdentity().getLac(); // Zone
                         rssi = cell.getCellSignalStrength().getDbm();
+                        mcc = cell.getCellIdentity().getMccString();
+                        mnc = cell.getCellIdentity().getMncString();
                         Log.d("SERVICE", "CellInfoWcdma");
-                        type = "CellInfoWcdma";
+                        type = "3G";
                     } else if (info instanceof CellInfoNr) { // 5G
                     CellInfoNr cell = (CellInfoNr) info;
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                         try {
+                            CellIdentityNr identity = (CellIdentityNr) cell.getCellIdentity();
                             // Récupération dynamique (réflexion)
-                            Method mNci = cell.getCellIdentity().getClass().getMethod("getNci");
-                            Method mTac = cell.getCellIdentity().getClass().getMethod("getTac");
 
-                            cellId = (int) mNci.invoke(cell.getCellIdentity());
-                            tac = (int) mTac.invoke(cell.getCellIdentity());
+                            cellId = identity.getNci();
+                            tac = identity.getTac();
+                            mcc = identity.getMccString();
+                            mnc = identity.getMncString();
 
                         } catch (Exception e) {
                             Log.w("NR", "Méthodes NR non disponibles");
@@ -223,31 +241,76 @@ public class GSMService extends Service {
                     }
                     rssi = cell.getCellSignalStrength().getDbm();
                     Log.d("SERVICE", "CellInfoNr");
-                    type = "CellInfoNr";
+                    type = "5G";
                 }
-                liste_return.append(type).append(": CI=").append(cellId).append(" TAC=").append(tac).append(" RSSI=").append(rssi);
-                if (info.isRegistered()) liste_return.append("SERVING");
+                String key = cellId + "_" + tac + "_" + mcc + "_" + mnc + "_" + type ;
 
+                String operator = "Inconnu";
+
+                if ("208".equals(mcc) && mnc != null) {
+                    switch (mnc) {
+                        case "01":
+                            operator = "Orange";
+                            break;
+                        case "10":
+                            operator = "SFR";
+                            break;
+                        case "15":
+                            operator = "Free Mobile";
+                            break;
+                        case "20":
+                            operator = "Bouygues Telecom";
+                            break;
+                    }
+                }
+
+                liste_return.append(type).append(": key=").append(key).append("op=").append(operator).append(" RSSI=").append(rssi);
+                if (info.isRegistered()) liste_return.append("SERVING");
                 // Only if cellId existe
                 if ( cellId > 1000 && cellId != 65535 /*&& tac > 100 && tac != 65535*/) {
                     // lastData vs cellId // si n'est pas déjà passé
-                    if (!lastData.contains(cellId)) {
+                    if (!lastData.contains(key)) {
+                        insertDataInBackground(key,operator);
                         if (dataAlert != null){
                             // verify if alert dataAlert
                             for (Data d : dataAlert) {
-                                if (d.Ci == cellId) {
-                                    alert_existe = true;
-                                    showNotification("Alert: " + cellId + " "+ d.name);
-                                    //break;
+                                if (Objects.equals(d.key, key)) {
+                                    if (d.alert) {
+                                        alert_existe = true;
+                                        showNotification("Alert: " + key + " " + d.name);
+                                    }else{
+                                        if (switchInfo) {
+                                            // notif if data existe
+                                            showNotification("Info: " + key + " " + d.name);
+                                        }
+                                    }
                                 }
                             }
                         }
-                        insertDataInBackground(cellId);
                     }
-                    last_tempo.add(cellId);
+                    last_tempo.add(key);
                 }
                 liste_return.append("\n");
             }
+
+            for (String id : lastData) {
+                if (!last_tempo.contains(id)) {
+                    for (Data d : dataAlert) {
+                        if (Objects.equals(d.key, id)) {
+                            if (d.alert) {
+                                alert_existe = true;
+                                showNotification("Alert END: " + id + " " + d.name);
+                            }else{
+                                if (switchInfo) {
+                                    // notif if data existe
+                                    showNotification("Info END: " + id + " " + d.name);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if (alert_existe){
                 // fair un buzz
                 vibrateOnce();
@@ -348,23 +411,28 @@ public class GSMService extends Service {
         manager.notify(uniqueId, builder.build());
     }
 
-    private void insertDataInBackground(int Ci) {
+    private void insertDataInBackground(String key,String info) {
         new Thread(() -> {
-            Data existing = db.dataDao().getByCi(Ci);
+            Data existing = db.dataDao().getByCi(key);
             long now = System.currentTimeMillis();
             if (existing != null) {
                 existing.count ++;
+                if (!existing.info.contains(info)){
+                    existing.info += info;
+                }
                 existing.date = now;
                 db.dataDao().update(existing);
             } else {
-                db.dataDao().insert(new Data("New","" , Ci, false,1,now));
+                Data newdata = new Data("New", info, key, false, 1, now);
+                db.dataDao().insert(newdata);
+                dataAlert.add(newdata);
             }
         }).start();
     }
 
     private void loadDataInBackground() {
         new Thread(() -> {
-            dataAlert = db.dataDao().getAlertData();
+            dataAlert = db.dataDao().getAllData();
             Log.d("SERVICE", "dataAlert: " + dataAlert.size());
         }).start();
     }
@@ -375,7 +443,7 @@ public class GSMService extends Service {
         if (v != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 //v.vibrate(VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE));
-                long[] pattern = {0, 100, 50, 200};
+                long[] pattern = {0, 100, 50, 200, 50, 300};
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     v.vibrate(VibrationEffect.createWaveform(pattern, -1));
                 } else {
@@ -450,12 +518,18 @@ public class GSMService extends Service {
         db = Room.databaseBuilder( getApplicationContext(), AppDatabase.class, "my_database" ).build(); // pas de allowMainThreadQueries()
 
         loadDataInBackground();
+
+        SharedPreferences prefs = getSharedPreferences("my_prefs", MODE_PRIVATE);
+
+        if (prefs.getBoolean("actif2",false)) auto_refresh();
+        if (prefs.getBoolean("switchInfo",false)) switchInfo = true;
+
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         // Pour ne pas redémarrer le service si kill
-        return START_NOT_STICKY;
+        return START_STICKY;
     }
 
     @Override

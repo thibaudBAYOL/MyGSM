@@ -50,7 +50,7 @@ public class DataAdapter extends RecyclerView.Adapter<DataAdapter.ViewHolder> {
         Data item = dataList.get(position);
         holder.txtName.setText(item.name);
         holder.txtAlert.setText((item.alert ? "ON": "OFF"));
-        holder.txtId.setText(String.valueOf(item.Ci));
+        holder.txtId.setText(item.key);
         holder.txtDate.setText(new Date(item.date).toString());
 
         holder.itemView.setOnClickListener(v -> {

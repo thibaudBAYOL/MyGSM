@@ -5,8 +5,9 @@ import androidx.room.PrimaryKey;
 
 @Entity
 public class Data {
-    @PrimaryKey(autoGenerate = false)
-    public int Ci;
+    @PrimaryKey(autoGenerate = true)
+    int id;
+    public String key;
 
     public String name;
 
@@ -17,9 +18,9 @@ public class Data {
 
     public long date; // timestamp en millisecondes
 
-    public Data(String name,String info, int Ci,Boolean alert, int count, long date) {
+    public Data(String name,String info, String key,Boolean alert, int count, long date) {
         this.name = name;
-        this.Ci = Ci;
+        this.key = key;
         this.alert = alert;
         this.info = info;
         this.count = count;

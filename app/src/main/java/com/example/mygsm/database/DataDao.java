@@ -22,7 +22,7 @@ public interface DataDao {
     @Query("SELECT * FROM Data WHERE alert=0 ORDER BY date DESC")
     List<Data> getNotAlertData();
 
-    @Query("SELECT * FROM Data WHERE Ci = :ci")
-    Data getByCi(int ci);
+    @Query("SELECT * FROM Data WHERE key = :mykey")
+    Data getByCi(String mykey);
 
 }

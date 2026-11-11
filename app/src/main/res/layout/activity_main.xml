@@ -53,6 +53,7 @@
         android:id="@+id/reset"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
         android:text="reset"
         app:layout_constraintBottom_toBottomOf="@+id/refresh"
         app:layout_constraintStart_toEndOf="@+id/actif2" />
@@ -62,6 +63,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="24dp"
+        android:layout_marginTop="20dp"
         android:ems="10"
         android:inputType="text"
         app:layout_constraintStart_toStartOf="@+id/refresh"
@@ -79,16 +81,16 @@
 
     <TextView
         android:id="@+id/textView3"
-        android:layout_width="53dp"
-        android:layout_height="36dp"
+        android:layout_width="40dp"
+        android:layout_height="42dp"
         android:text="Name:"
         app:layout_constraintBottom_toBottomOf="@+id/name"
         app:layout_constraintEnd_toStartOf="@+id/name" />
 
     <TextView
         android:id="@+id/textView4"
-        android:layout_width="51dp"
-        android:layout_height="30dp"
+        android:layout_width="37dp"
+        android:layout_height="37dp"
         android:text="Infos:"
         app:layout_constraintEnd_toStartOf="@+id/infos"
         app:layout_constraintTop_toTopOf="@+id/infos" />
@@ -164,5 +166,21 @@
         android:text="Button"
         app:layout_constraintBottom_toBottomOf="@+id/infos"
         app:layout_constraintStart_toEndOf="@+id/infos" />
+
+    <Switch
+        android:id="@+id/switch_info"
+        android:layout_width="87dp"
+        android:layout_height="22dp"
+        android:text="info"
+        app:layout_constraintStart_toStartOf="@+id/actif2"
+        app:layout_constraintTop_toBottomOf="@+id/actif2" />
+
+    <TextView
+        android:id="@+id/textView"
+        android:layout_width="56dp"
+        android:layout_height="83dp"
+        android:text="Gsm=2g, Wcdma =3g, Lte=4g, Nr=5g"
+        app:layout_constraintEnd_toStartOf="@+id/infos"
+        app:layout_constraintTop_toBottomOf="@+id/textView4" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
